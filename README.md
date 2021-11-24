@@ -13,6 +13,7 @@ Další parametry aplikace lze měnit v bloku `CONFIGURABLE CONSTANTS` v souboru
 - `BROADCAST_IP`: Broadcast IP adresa na vybraném interface
 - `HTTP_PORT`: Port, na kterém poslouchá http server leadera na registraci uzlů
 - `NEW_CLIENT_TIMEOUT`: Timeout po posledním přidání nového uzlu, než začne výběr leadera
+- `NODE_DISCONNECT_TIMEOUT`: Timeout po posledním pingu followera na leadera, než leader označí uzel za odpojený
 
 ## Popis běhu aplikace
 Každý uzel může nabývat následujících stavů:
@@ -40,8 +41,8 @@ leaderovi.
 Jakmile se uzel prohlásí za leadera, začne poslouchat na nakonfigurovaném portu, kde spustí HTTP server pro registraci follower
 uzlů. Jakmile je HTTP server úspěšně spuštěný, leader začne vysílat heartbeat packety a je připravený pro registraci uzlů.
 
-Follower uzel musí iciovat registraci k leaderovi. Jakmile obdrží heartbeat packet, zaregistruje se k leaderovi pomocí HTTP GET
-requestu, ve kterém mu leader vrátí jeho barvu.
+Follower uzel musí iniciovat registraci k leaderovi. Jakmile obdrží heartbeat packet, zaregistruje se k leaderovi pomocí HTTP GET
+requestu, ve kterém mu leader vrátí jeho barvu. Tento request follower odesílá opakovaně a na základě toho aktualizuje svou barvu. Barva followera se může změnit, pokud se změní počet uzlů při běhu aplikace.
 
 Přidělování barev probíhá následovně: Leader má díky discovery fázi přehled o počtu ostatních uzlů. Leader zjistí, kolik uzlů musí
 obarvit zeleně (`ceil(<pocet_uzlu> / 3)`). Leader přijímá HTTP get requesty a postupně uzly obarvuje vždy zeleně, dokud nevyčerpá
@@ -49,5 +50,26 @@ počet zelených barev. Po vyčerpání zelených barev obarvuje uzly červeně.
 
 ## Změna počtu uzlů v průběhu běhu aplikace
 
-Aplikce dokáže reagovat na přidávání nových uzlů a dle popsaného algoritmu dokáže validně obarvit nové uzly aby splňovali zadání.
-Aplikace nedokáže validně reagovat na odebírání uzlů.
+### Přidání nového uzlu
+Pokud se při běhu distribuovaného systému připojí nový uzel, obdrží leader hearthbeat packet a přihlásí se k aktuálnímu leaderovi. Leader následovně dle nového stavu přebarví uzly, aby odpovídali počátečnímu zadání. Přebarvení probíhá v moment, kdy follower posílá ping packet leaderovi, leader v odpovědi tohoto requestu vrací uzlu svou barvu.
+
+### Odebrání follower uzlu
+Pokud se jakýkoliv follower uzel odpojí a přestane posílat ping requesty leaderovi, leader čeká daný čas (`NODE_DISCONNECT_TIMEOUT`). Pokud se v tomto času follower uzel nepřihlásí leaderovi, leader tento uzel označí za nevalidní, odebere ho ze svého seznamu a přebarví ostatní uzly dle počátečnímu zadání.
+
+### Odebrání leader uzlu
+Pokud se leader uzel odpojí, http ping requesty od followerů selžou, popřípadě vyprší na timeoutu. Pokud nastane tento stav, follower uzel se změní do stavu init a celý proces volby leadera probíhá znovu.
+
+## Docker healthcheck
+
+Follower i leader uzel pracují na tick systému, při kterém periodicky spouští svou tick funkci, která obsluhuje logiku aplikace. Při každém spuštění tick funkce zapíše uzel aktuální timestamp do souboru `health.log`. Soubor `healthcheck.py` čte obsah tohoto souboru a kontroluje, kdy naposledy uzel zapsal timestamp do souboru. Pokud od zapsání timestampu uběhlo déle než 60 sekund (nebo pokud soubor neexistuje), script vrací návratovou hodnotu 1. V opačném případě vrací návratovou hodnotu 0.
+
+## Komunikační náročnost algoritmů
+
+### Discovery fáze
+Při discovery fázi každý uzel vysílá UDP broadcast, při kterém dává ostatním uzlům o sobě vědět. Komunikační náročnosti je `O(n)`.
+
+### Running fáze
+Při running fázi je leader v pasivní roli a follower uzly periodicky odesílají leaderovi ping requesty. Komunikační náročnosti je `O(n)`.
+
+
+Leader při running fázi periodicky vysílá heartbeat packety, pro případ, že se může do sítě připojit nový uzel. Komunikační náročnosti je `O(1)`.

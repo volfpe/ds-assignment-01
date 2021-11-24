@@ -18,7 +18,7 @@ unless Vagrant.has_plugin?("vagrant-docker-compose")
 end
 
 # Name of Docker images built:
-NODE_IMAGE = "ds/assigment-01/node:1"
+NODE_IMAGE = "ds/assigment-01/node:1.1"
 
 # Node definitions
 NODES  = { :nameprefix => "node-",  # nodes names: node-1, node-2, etc.
@@ -27,7 +27,7 @@ NODES  = { :nameprefix => "node-",  # nodes names: node-1, node-2, etc.
               :image => NODE_IMAGE,
         }
 # Number of nodes to start:
-NODES_COUNT = 9
+NODES_COUNT = 4
 
 # Common configuration
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
